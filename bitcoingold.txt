@@ -1,0 +1,5 @@
+# Bitcoin Gold target addresses
+btg1qyy8vjz5vq8l9jxq8t5qgk7g6j8w4qzc86hrdu3p8v7g9g6q8t5qgk7g6j8w4
+btg1qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a
+btg1qp3wjpa3tjlj042z2wv7hahsldgwhwy0rq9sywjpyy
+btg1qq95sysm5jctv8mckq5wsn4v2j8q8t5qgk7g6j8w4

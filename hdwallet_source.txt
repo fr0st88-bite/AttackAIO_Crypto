@@ -1,0 +1,192 @@
+    def __init__(
+        self,
+        cryptocurrency: Type[ICryptocurrency],
+        hd: Optional[Type[IHD]] = None,
+        network: Union[str, Type[INetwork]] = "mainnet",
+        address: Optional[Union[str, Type[IAddress]]] = None,
+        **kwargs
+    ) -> None:
+        """
+        Initialize the cryptocurrency handler.
+
+        :param cryptocurrency: The cryptocurrency class to be used.
+        :type cryptocurrency: Type[ICryptocurrency]
+        :param hd: The hierarchical deterministic wallet class to be used. Defaults to None.
+        :type hd: Optional[Type[IHD]]
+        :param network: The network to be used. Defaults to "mainnet".
+        :type network: Union[str, Type[INetwork]]
+        :param address: The address type to be used. Defaults to None.
+        :type address: Optional[Union[str, Type[IAddress]]]
+        :param kwargs: Additional keyword arguments.
+        """
+
+        if not issubclass(cryptocurrency, ICryptocurrency):
+            raise Error(
+                "Invalid cryptocurrency sub-class", expected=Type[ICryptocurrency], got=type(cryptocurrency)
+            )
+        self._cryptocurrency = cryptocurrency()
+        self._ecc = kwargs.get("ecc", self._cryptocurrency.ECC)
+
+        if hd is None:  # Use default hd
+            hd = HDS.hd(self._cryptocurrency.DEFAULT_HD)
+        elif hd is not None and not issubclass(hd, IHD):
+            raise Error(
+                "Invalid Hierarchical Deterministic (HD) sub-class", expected=Type[IHD], got=type(hd)
+            )
+        if hd.name() in [
+            "BIP32", "BIP44", "BIP49", "BIP84", "BIP86", "BIP141", "Electrum-V1"
+        ]:
+            if not kwargs.get("public_key_type") and hd.name() == "Electrum-V1":
+                self._public_key_type = kwargs.get("public_key_type", PUBLIC_KEY_TYPES.UNCOMPRESSED)
+            elif not kwargs.get("public_key_type") and hd.name() != "Electrum-V1":
+                self._public_key_type = kwargs.get("public_key_type", PUBLIC_KEY_TYPES.COMPRESSED)
+            elif kwargs.get("public_key_type") in PUBLIC_KEY_TYPES.get_types():
+                self._public_key_type = kwargs.get("public_key_type")
+            else:
+                raise Error(
+                    f"Invalid {hd.name()} public key type",
+                    expected=PUBLIC_KEY_TYPES.get_types(),
+                    got=kwargs.get("public_key_type")
+                )
+        elif hd.name() == "Cardano":
+            from .cryptocurrencies import Cardano
+            if not kwargs.get("cardano_type"):
+                self._cardano_type = kwargs.get("cardano_type", Cardano.TYPES.SHELLEY_ICARUS)
+            elif Cardano.TYPES.is_cardano_type(kwargs.get("cardano_type")):
+                self._cardano_type = kwargs.get("cardano_type")
+            else:
+                raise Error(
+                    "Invalid Cardano type", expected=Cardano.TYPES.get_cardano_types(), got=kwargs.get("cardano_type")
+                )
+        elif hd.name() == "Electrum-V2":
+            if not kwargs.get("mode"):
+                self._mode = kwargs.get("mode", MODES.STANDARD)  # Default
+            elif kwargs.get("mode") in MODES.get_modes():
+                self._mode = kwargs.get("mode")
+            else:
+                raise Error(
+                    f"Invalid {hd.name()} mode", expected=MODES.get_modes(), got=kwargs.get("mode")
+                )
+            if not kwargs.get("mnemonic_type"):
+                self._mnemonic_type = kwargs.get("mnemonic_type", ELECTRUM_V2_MNEMONIC_TYPES.STANDARD)  # Default
+            elif kwargs.get("mnemonic_type") in ElectrumV2Mnemonic.mnemonic_types.keys():
+                self._mnemonic_type = kwargs.get("mnemonic_type")
+            else:
+                raise Error(
+                    f"Invalid {hd.name()} mnemonic type",
+                    expected=ElectrumV2Mnemonic.mnemonic_types.keys(),
+                    got=kwargs.get("mnemonic_type")
+                )
+            self._public_key_type = kwargs.get(
+                "public_key_type", PUBLIC_KEY_TYPES.UNCOMPRESSED
+            )
+        elif hd.name() == "Monero":
+            if not kwargs.get("checksum"):
+                self._checksum = kwargs.get("checksum", False)  # Default
+            elif isinstance(kwargs.get("checksum"), bool):
+                self._checksum = kwargs.get("checksum")
+            else:
+                raise Error(
+                    f"Invalid {hd.name()} checksum", expected=bool, got=type(kwargs.get("checksum"))
+                )
+
+        try:
+            if not isinstance(network, str) and issubclass(network, INetwork):
+                network = network.NAME
+            if not self._cryptocurrency.NETWORKS.is_network(network=network):
+                raise NetworkError(
+                    f"Wrong {self._cryptocurrency.NAME} network",
+                    expected=self._cryptocurrency.NETWORKS.get_networks(),
+                    got=network
+                )
+            self._network = self._cryptocurrency.NETWORKS.get_network(network=network)
+        except TypeError:
+            raise NetworkError(
+                "Invalid network type", expected=[str, INetwork], got=type(network)
+            )
+
+        if hd.name() in [
+            "Algorand", "BIP32", "BIP44", "BIP86", "Cardano"
+        ]:
+            self._semantic = kwargs.get("semantic", self._cryptocurrency.DEFAULT_SEMANTIC)
+        elif hd.name() == "BIP49":
+            self._semantic = kwargs.get("semantic", "p2wpkh-in-p2sh")
+        elif hd.name() in [
+            "BIP84", "BIP141"
+        ]:
+            self._semantic = kwargs.get("semantic", "p2wpkh")
+        else:
+            self._semantic = None
+
+        if address is None:  # Use default address
+            address = self._cryptocurrency.DEFAULT_ADDRESS
+            if hd.name() == "BIP49":
+                address = "P2WPKH-In-P2SH"
+            elif hd.name() == "BIP84":
+                address = "P2WPKH"
+            elif hd.name() == "BIP86":
+                address = "P2TR"
+            elif hd.name() == "BIP141":
+                if self._semantic == SEMANTICS.P2WPKH:
+                    address = "P2WPKH"
+                elif self._semantic == SEMANTICS.P2WPKH_IN_P2SH:
+                    address = "P2WPKH-In-P2SH"
+                elif self._semantic == SEMANTICS.P2WSH:
+                    address = "P2WSH"
+                elif self._semantic == SEMANTICS.P2WSH_IN_P2SH:
+                    address = "P2WSH-In-P2SH"
+        elif issubclass(address, IAddress):
+            address = address.name()
+        if address not in self._cryptocurrency.ADDRESSES.get_addresses():
+            raise AddressError(
+                f"Wrong {self._cryptocurrency.NAME} address",
+                expected=self._cryptocurrency.ADDRESSES.get_addresses(),
+                got=address
+            )
+        self._address = ADDRESSES.address(name=address)
+        self._address_type = kwargs.get(
+            "address_type", self._cryptocurrency.DEFAULT_ADDRESS_TYPE
+        )
+        if self._cryptocurrency.NAME == "Tezos":
+            self._address_prefix = kwargs.get(
+                "address_prefix", self._cryptocurrency.DEFAULT_ADDRESS_PREFIX
+            )
+
+        if hd.name() not in cryptocurrency.HDS.get_hds():
+            raise CryptocurrencyError(
+                f"{hd.name()} HD not implemented on {cryptocurrency.NAME} cryptocurrency"
+            )
+
+        self._language = kwargs.get("language", "english")
+        self._passphrase = kwargs.get("passphrase", None)
+        self._use_default_path = kwargs.get("use_default_path", False)
+        # self._cryptocurrency.get_default_path(network=self._network.name())
+        self._kwargs = {
+            "staking_public_key": kwargs.get("staking_public_key", None),
+            "payment_id": kwargs.get("payment_id", None)
+        }
+
+        if hd.name() == "Algorand":
+            self._hd = hd()
+        elif hd.name() in [
+            "BIP32", "BIP44", "BIP49", "BIP84", "BIP86", "BIP141"
+        ]:
+            self._hd = hd(
+                ecc=self._ecc,
+                public_key_type=self._public_key_type,
+                semantic=self._semantic,
+                coin_type=self._cryptocurrency.COIN_TYPE,
+                wif_prefix=self._network.WIF_PREFIX
+            )
+        elif hd.name() == "Cardano":
+            self._hd = hd(cardano_type=self._cardano_type)
+        elif hd.name() == "Electrum-V1":
+            self._hd = hd(
+                public_key_type=self._public_key_type, wif_prefix=self._network.WIF_PREFIX
+            )
+        elif hd.name() == "Electrum-V2":
+            self._hd = hd(
+                mode=self._mode, public_key_type=self._public_key_type, wif_prefix=self._network.WIF_PREFIX
+            )
+        elif hd.name() == "Monero":
+            self._hd = hd(network=self._network.NAME)

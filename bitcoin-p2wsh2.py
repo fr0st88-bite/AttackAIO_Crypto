@@ -1,11 +1,13 @@
 import codecs
 import hashlib
 import threading
+import os
 
 import ecdsa
 import requests
 from hdwallet import HDWallet
 from hdwallet.symbols import BTC as SYMBOL
+from hdwallet.cryptocurrencies import BitcoinMainnet
 from requests_html import HTMLSession
 from rich.console import Console
 from rich.panel import Panel
@@ -15,8 +17,39 @@ console.clear()
 
 filer = input('\n[*] Just Enter the Desired Text File Name [HERE] : ')
 
-filename = str(filer + ".txt")
+if not filer.endswith('.txt'):
+    filename = filer + '.txt'
+else:
+    filename = filer
 mylist = [i.strip() for i in open(filename).readlines()]
+
+# Persistence tracking
+USED_FILE = "used_passphrases.txt"
+FOUND_FILE = "found.txt"
+
+def load_used_passphrases():
+    """Load already processed passphrases"""
+    if os.path.exists(USED_FILE):
+        with open(USED_FILE, 'r', encoding='utf-8') as f:
+            return set(line.strip() for line in f if line.strip())
+    return set()
+
+def add_to_used(passphrase):
+    """Mark passphrase as processed"""
+    with open(USED_FILE, 'a', encoding='utf-8') as f:
+        f.write(passphrase + '\n')
+
+def save_found(blockchain, address, balance, passphrase, private_key):
+    """Save to centralized found.txt"""
+    with open(FOUND_FILE, 'a', encoding='utf-8', errors='ignore') as f:
+        f.write(f"Blockchain: {blockchain}\n")
+        f.write(f"Address: {address}\n")
+        f.write(f"Balance: {balance}\n")
+        f.write(f"Passphrase: {passphrase}\n")
+        f.write(f"Private Key: {private_key}\n")
+        f.write("-" * 80 + "\n\n")
+
+used_passphrases = load_used_passphrases()
 
 
 class BrainWallet:
@@ -87,15 +120,20 @@ class BrainWallet:
 
 
 def MmDrza():
+    global used_passphrases
     w = 0
     count = 0
 
     for i in range(0, len(mylist)):
         count += 1
         passphrase = mylist[i]
+        
+        if passphrase in used_passphrases:
+            continue
+        
         wallet = BrainWallet()
         private_key, address = wallet.generate_address_from_passphrase(passphrase)
-        hdwallet: HDWallet = HDWallet(symbol=SYMBOL)
+        hdwallet: HDWallet = HDWallet(cryptocurrency=BitcoinMainnet, symbol=SYMBOL)
         hdwallet.from_private_key(private_key=private_key)
         addr = hdwallet.p2wsh_in_p2sh_address()
         url_n = f"https://btc1.trezor.io/address/{addr}"
@@ -112,20 +150,15 @@ def MmDrza():
             passphrase) + '[/]\nPRIVATEKEY: [grey54]' + str(private_key) + '[/]')
         style = "gold1 on grey11"
         if bal != ifxbtc:
-            fx = open(u"BitcoinWinner_________" + str(filer) + "_MMDRZA.txt", "a")
-            fx.write('\nAddress Compressed : ' + addr + '  Bal = ' + str(bal))
-            fx.write('\nPassphrase       : ' + passphrase)
-            fx.write('\nPrivate Key      : ' + private_key)
-            fx.write('\nBalance: ' + str(bal))
-            fx.write('\n------------------ Programmer Mmdrza.Com ----------------------\n')
-            fx.close()
+            save_found("Bitcoin P2WSH-nested-P2SH", addr, bal, passphrase, private_key)
+            add_to_used(passphrase)
+            used_passphrases.add(passphrase)
             console.print(
                 Panel(str(MmdrzaPanel), title="[white]Win Wallet [/]", subtitle="[green_yellow blink] Mmdrza.Com [/]",
                       style="red"), style=style, justify="full")
             w += 1
         else:
             print(f"{count} - Found:{w} # Addr: {addr} ~ Value:{bal} #Passphrase: {passphrase}")
-            continue
 
 
 MmDrza()

@@ -1,0 +1,4 @@
+# Test file for filename handling verification
+passphrase1
+passphrase2
+passphrase3
